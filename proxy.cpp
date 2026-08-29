@@ -1,46 +1,43 @@
-#include <arpa/inet.h>
-#include <cerrno>
-#include <cstring>
+#include <boost/beast/core.hpp>
+#include <boost/beast/http.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio.hpp>
+
 #include <iostream>
-#include <netinet/in.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <unistd.h>
+#include <string>
 
-int main() {
-  int server_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-  if (server_fd == -1) {
-    std::cerr << "Socket creation has failed due to " << std::strerror(errno)
-              << "\n";
-    return 1;
-  }
-  int opt = -1;
-  setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+namespace beast = boost::beast;
+namespace http = beast::http;
+namespace net = boost::asio;
+using tcp = net::ip::tcp;
 
-  sockaddr_in addr{};
-  addr.sin_family = AF_INET;
-  addr.sin_addr.s_addr = INADDR_ANY;
-  addr.sin_port = htons(3000);
-
-  if (bind(server_fd, (sockaddr *)&addr, sizeof(addr)) == -1) {
-    std::cerr << "bind() failed due to " << std::strerror(errno) << "\n";
-    return 1;
-  }
-  if (listen(server_fd, 500) == -1) {
-    std::cerr << "listening on port 3000 failed due to " << std::strerror(errno)
-              << "\n";
-    return 1;
-  }
-
-  sockaddr_in client_addr{};
-  socklen_t client_len = sizeof(client_addr);
-  int client_fd = accept(server_fd, (sockaddr *)&client_addr, &client_len);
-  if (client_fd == -1) {
-    std::cerr << "Accepting client request failed: " << std::strerror(errno)
-              << "\n";
-    return 1;
-  }
-  std::cout << "Client connected!\n";
-  close(client_fd);
-  close(server_fd);
+int main(){
+    try{
+        net::io_context   ioc;
+        tcp::acceptor acceptor(
+        ioc,
+        tcp::endpoint(tcp::v4(), 3000)
+        );
+        std::cout<<"Server Listening on http://localhost:3000\n";
+        while(true){
+            tcp::socket socket(ioc);
+            acceptor.accept(socket);
+            beast::flat_buffer buffer;
+            http::request<http::string_body> request;
+            http::read(socket, buffer, request);
+            std::cout<<request.method_string()<<" "<< request.target() << "\n";
+            http::response<http::string_body> response{
+                http::status::ok,
+                request.version()
+            };
+            response.set(http::field::content_type,"text/plain");
+            response.body() = "Hello from boost!\n";
+            response.prepare_payload();
+            http::write(socket,response);
+            beast::error_code ec;
+            socket.shutdown(tcp::socket::shutdown_send, ec);
+        }
+    } catch(const std::exception & e){
+        std::cerr<<"Error: "<< e.what() <<"\n";
+    }
 }
