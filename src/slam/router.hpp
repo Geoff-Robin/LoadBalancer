@@ -17,7 +17,7 @@ using RouteHandler = std::function<Response(const Request&)>;
 [[nodiscard]] Response json_response(http::status status, const Request& request, const Json& body);
 
 class Router {
-public:
+  public:
     void add(http::verb method, std::string path, RouteHandler handler);
     void get(std::string path, RouteHandler handler);
     void post(std::string path, RouteHandler handler);
@@ -27,8 +27,13 @@ public:
     [[nodiscard]] bool matches_path(const Request& request) const;
     [[nodiscard]] Response dispatch(const Request& request) const;
     [[nodiscard]] std::size_t size() const noexcept;
-private:
-    struct Route { http::verb method; std::string path; RouteHandler handler; };
+
+  private:
+    struct Route {
+        http::verb method;
+        std::string path;
+        RouteHandler handler;
+    };
     std::vector<Route> routes_;
 };
 } // namespace slam

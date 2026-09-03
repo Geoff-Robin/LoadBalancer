@@ -1,8 +1,8 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
-#include <memory>
 
 namespace core {
 
@@ -12,7 +12,7 @@ struct Backend {
 };
 
 class BackendRegistry {
-public:
+  public:
     explicit BackendRegistry(std::string database_path = "load_balancer.db");
     ~BackendRegistry();
 
@@ -26,7 +26,7 @@ public:
     bool register_backend(Backend backend);
     [[nodiscard]] std::vector<Backend> backends() const;
 
-private:
+  private:
     class Impl;
     std::unique_ptr<Impl> impl_;
 };
