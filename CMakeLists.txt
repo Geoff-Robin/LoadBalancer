@@ -8,7 +8,20 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Boost REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(nlohmann_json REQUIRED)
+find_package(SQLite3 REQUIRED)
 
-add_executable(load_balancer proxy.cpp)
+add_library(slam
+    src/slam/router.cpp
+    src/slam/server.cpp
+)
 
-target_link_libraries(load_balancer PRIVATE Boost::boost)
+target_include_directories(slam PUBLIC src)
+target_link_libraries(slam PUBLIC Boost::boost nlohmann_json::nlohmann_json PRIVATE spdlog::spdlog)
+
+add_library(core src/core/backend_registry.cpp)
+target_include_directories(core PUBLIC src)
+target_link_libraries(core PRIVATE spdlog::spdlog SQLite::SQLite3)
+
+add_executable(load_balancer src/proxy.cpp)
+
+target_link_libraries(load_balancer PRIVATE core slam spdlog::spdlog)

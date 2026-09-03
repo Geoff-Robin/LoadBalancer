@@ -12,6 +12,7 @@ class LoadBalancer(ConanFile):
         "boost/1.89.0",
         "spdlog/1.15.3",
         "nlohmann_json/3.12.0",
+        "sqlite3/3.47.2",
     )
 
     test_requires = (
