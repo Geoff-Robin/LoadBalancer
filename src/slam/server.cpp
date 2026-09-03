@@ -45,6 +45,12 @@ void Server::add_router(Router router) {
     spdlog::info("Registering router with {} route(s)", router.size());
     routers_.push_back(std::move(router));
 }
+void Server::set_fallback(RouteHandler handler) {
+    if (!handler) {
+        throw std::invalid_argument("fallback handler must not be empty");
+    }
+    fallback_ = std::move(handler);
+}
 std::uint16_t Server::port() const {
     return acceptor_.local_endpoint().port();
 }
@@ -140,6 +146,9 @@ Response Server::dispatch(const Request& request) const {
         if (router.matches_path(request))
             return json_response(http::status::method_not_allowed, request,
                                  {{"error", "method_not_allowed"}});
+    }
+    if (fallback_) {
+        return fallback_(request);
     }
     return json_response(http::status::not_found, request, {{"error", "not_found"}});
 }

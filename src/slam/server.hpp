@@ -27,6 +27,7 @@ class Server {
     Router& router() noexcept;
     const Router& router() const noexcept;
     void add_router(Router router);
+    void set_fallback(RouteHandler handler);
     [[nodiscard]] std::uint16_t port() const;
     [[nodiscard]] const InboundWorkerConfig& inbound_worker_config() const noexcept;
     void run();
@@ -41,6 +42,7 @@ class Server {
     tcp::acceptor acceptor_;
     Router router_;
     std::vector<Router> routers_;
+    RouteHandler fallback_;
     InboundConnectionQueue connection_queue_;
     std::vector<std::thread> workers_;
 };

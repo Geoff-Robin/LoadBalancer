@@ -19,13 +19,19 @@ add_library(slam
 target_include_directories(slam PUBLIC src)
 target_link_libraries(slam PUBLIC Boost::boost nlohmann_json::nlohmann_json PRIVATE spdlog::spdlog)
 
-add_library(core src/core/backend_registry.cpp)
-target_include_directories(core PUBLIC src)
-target_link_libraries(core PRIVATE spdlog::spdlog SQLite::SQLite3)
-
 add_library(requests src/requests/backend_connection_pool.cpp)
 target_include_directories(requests PUBLIC src)
 target_link_libraries(requests PUBLIC Boost::boost PRIVATE spdlog::spdlog)
+
+add_library(core
+    src/core/backend_endpoint.cpp
+    src/core/backend_health_monitor.cpp
+    src/core/backend_proxy.cpp
+    src/core/backend_registry.cpp
+    src/core/round_robin_strategy.cpp
+)
+target_include_directories(core PUBLIC src)
+target_link_libraries(core PUBLIC Boost::boost PRIVATE requests spdlog::spdlog SQLite::SQLite3)
 
 add_library(routes
     src/routes/backend_routes.cpp
@@ -42,6 +48,15 @@ set(FORMAT_SOURCES
     src/proxy.cpp
     src/core/backend_registry.cpp
     src/core/backend_registry.hpp
+    src/core/backend_endpoint.cpp
+    src/core/backend_endpoint.hpp
+    src/core/backend_health_monitor.cpp
+    src/core/backend_health_monitor.hpp
+    src/core/backend_proxy.cpp
+    src/core/backend_proxy.hpp
+    src/core/load_balancing_strategy.hpp
+    src/core/round_robin_strategy.cpp
+    src/core/round_robin_strategy.hpp
     src/requests/backend_connection_pool.cpp
     src/requests/backend_connection_pool.hpp
     src/routes/backend_routes.cpp

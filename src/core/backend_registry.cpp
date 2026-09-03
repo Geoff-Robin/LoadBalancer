@@ -58,6 +58,47 @@ void bind_text(sqlite3_stmt* statement, int index, const std::string& value) {
     }
 }
 
+bool has_column(sqlite3* database, const char* table, const char* column) {
+    const std::string query = std::string("PRAGMA table_info(") + table + ");";
+    Statement statement{database, query.c_str()};
+    for (;;) {
+        const int result = sqlite3_step(statement.get());
+        if (result == SQLITE_DONE) {
+            return false;
+        }
+        throw_on_error(result, database, "inspect table columns");
+        const auto* name = reinterpret_cast<const char*>(sqlite3_column_text(statement.get(), 1));
+        if (name != nullptr && std::string(name) == column) {
+            return true;
+        }
+    }
+}
+
+const char* health_name(BackendHealth health) {
+    switch (health) {
+    case BackendHealth::unknown:
+        return "unknown";
+    case BackendHealth::healthy:
+        return "healthy";
+    case BackendHealth::unhealthy:
+        return "unhealthy";
+    }
+    throw std::invalid_argument("invalid backend health state");
+}
+
+BackendHealth health_from_name(const char* health) {
+    if (health == nullptr || std::string(health) == "unknown") {
+        return BackendHealth::unknown;
+    }
+    if (std::string(health) == "healthy") {
+        return BackendHealth::healthy;
+    }
+    if (std::string(health) == "unhealthy") {
+        return BackendHealth::unhealthy;
+    }
+    throw std::runtime_error("invalid persisted backend health state");
+}
+
 } // namespace
 
 class BackendRegistry::Impl {
@@ -76,8 +117,17 @@ class BackendRegistry::Impl {
         execute(database, "PRAGMA foreign_keys = ON;");
         execute(database, "CREATE TABLE IF NOT EXISTS backends ("
                           "id INTEGER PRIMARY KEY, host TEXT NOT NULL UNIQUE, "
+                          "health_status TEXT NOT NULL DEFAULT 'unknown', "
+                          "health_checked_at TEXT, "
                           "created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, "
                           "updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);");
+        if (!has_column(database, "backends", "health_status")) {
+            execute(database,
+                    "ALTER TABLE backends ADD COLUMN health_status TEXT NOT NULL DEFAULT 'unknown';");
+        }
+        if (!has_column(database, "backends", "health_checked_at")) {
+            execute(database, "ALTER TABLE backends ADD COLUMN health_checked_at TEXT;");
+        }
         execute(database, "CREATE TABLE IF NOT EXISTS backend_urls ("
                           "id INTEGER PRIMARY KEY, backend_id INTEGER NOT NULL, url TEXT NOT NULL, "
                           "FOREIGN KEY (backend_id) REFERENCES backends(id) ON DELETE CASCADE, "
@@ -165,7 +215,8 @@ bool BackendRegistry::register_backend(Backend backend) {
 std::vector<Backend> BackendRegistry::backends() const {
     std::vector<Backend> result;
     Statement query{impl_->database,
-                    "SELECT backends.host, backend_urls.url FROM backends "
+                    "SELECT backends.host, backend_urls.url, backends.health_status, "
+                    "backends.health_checked_at FROM backends "
                     "LEFT JOIN backend_urls ON backend_urls.backend_id = backends.id "
                     "ORDER BY backends.host, backend_urls.url;"};
     std::string current_host;
@@ -177,7 +228,13 @@ std::vector<Backend> BackendRegistry::backends() const {
         const auto* host = reinterpret_cast<const char*>(sqlite3_column_text(query.get(), 0));
         if (current_host != host) {
             current_host = host;
-            result.push_back({current_host, {}});
+            const auto* health = reinterpret_cast<const char*>(sqlite3_column_text(query.get(), 2));
+            std::optional<std::string> health_checked_at;
+            if (sqlite3_column_type(query.get(), 3) != SQLITE_NULL) {
+                health_checked_at.emplace(
+                    reinterpret_cast<const char*>(sqlite3_column_text(query.get(), 3)));
+            }
+            result.push_back({current_host, {}, health_from_name(health), std::move(health_checked_at)});
         }
         if (sqlite3_column_type(query.get(), 1) != SQLITE_NULL) {
             result.back().urls.emplace_back(
@@ -185,6 +242,18 @@ std::vector<Backend> BackendRegistry::backends() const {
         }
     }
     return result;
+}
+
+void BackendRegistry::set_backend_health(const std::string& host, BackendHealth health) {
+    if (host.empty()) {
+        throw std::invalid_argument("backend host must not be empty");
+    }
+    Statement update{impl_->database,
+                     "UPDATE backends SET health_status = ?, health_checked_at = CURRENT_TIMESTAMP "
+                     "WHERE host = ?;"};
+    bind_text(update.get(), 1, health_name(health));
+    bind_text(update.get(), 2, host);
+    expect_done(sqlite3_step(update.get()), impl_->database, "update backend health");
 }
 
 } // namespace core
