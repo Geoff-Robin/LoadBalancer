@@ -11,6 +11,7 @@ find_package(nlohmann_json REQUIRED)
 find_package(SQLite3 REQUIRED)
 
 add_library(slam
+    src/slam/connection_queue.cpp
     src/slam/router.cpp
     src/slam/server.cpp
 )
@@ -22,14 +23,33 @@ add_library(core src/core/backend_registry.cpp)
 target_include_directories(core PUBLIC src)
 target_link_libraries(core PRIVATE spdlog::spdlog SQLite::SQLite3)
 
+add_library(requests src/requests/backend_connection_pool.cpp)
+target_include_directories(requests PUBLIC src)
+target_link_libraries(requests PUBLIC Boost::boost PRIVATE spdlog::spdlog)
+
+add_library(routes
+    src/routes/backend_routes.cpp
+    src/routes/health_routes.cpp
+)
+target_include_directories(routes PUBLIC src)
+target_link_libraries(routes PUBLIC core slam)
+
 add_executable(load_balancer src/proxy.cpp)
 
-target_link_libraries(load_balancer PRIVATE core slam spdlog::spdlog)
+target_link_libraries(load_balancer PRIVATE requests routes spdlog::spdlog)
 
 set(FORMAT_SOURCES
     src/proxy.cpp
     src/core/backend_registry.cpp
     src/core/backend_registry.hpp
+    src/requests/backend_connection_pool.cpp
+    src/requests/backend_connection_pool.hpp
+    src/routes/backend_routes.cpp
+    src/routes/backend_routes.hpp
+    src/routes/health_routes.cpp
+    src/routes/health_routes.hpp
+    src/slam/connection_queue.cpp
+    src/slam/connection_queue.hpp
     src/slam/router.cpp
     src/slam/router.hpp
     src/slam/server.cpp
