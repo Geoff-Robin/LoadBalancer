@@ -67,14 +67,74 @@ state, between container restarts.
 
 ## Architecture
 
-The core components are intentionally separated:
+`src/proxy.cpp` composes the server, backend registry, health monitor, proxy,
+and round-robin strategy. Incoming connections follow this path:
 
-- `BackendRegistry` stores registered backends and their persisted health data.
-- `BackendHealthMonitor` performs scheduled health requests through the shared
-  connection-pool code in `requests`.
-- `BackendProxy` filters matching healthy backends and relays HTTP traffic.
-- `LoadBalancingStrategy` defines the selection interface.
-- `RoundRobinStrategy` is the current strategy implementation.
+```text
+client
+  | HTTP/1.1
+  v
+slam::Server --> bounded inbound queue --> worker thread
+  |                                      |
+  | exact management-route match         v
+  +--> routes::Router                  BackendProxy fallback
+  |     +-- GET /                      +-- load matching backends from SQLite
+  |     +-- POST /backends/register    +-- exclude unhealthy entries
+  |                                    +-- select one with a strategy
+  |                                    +-- forward the HTTP request
+  v
+response
+```
 
-To implement another policy, add a class that implements
-`LoadBalancingStrategy::select` and pass it to `BackendProxy` in `src/proxy.cpp`.
+### Server and routes
+
+The `slam` library provides a synchronous HTTP/1.1 server built on Boost.Asio
+and Boost.Beast. One accept loop puts sockets into a bounded queue, and four
+worker threads consume them by default. Workers support keep-alive connections
+and dispatch exact method/path routes. A path with a registered route but the
+wrong HTTP method produces `405`; an unmatched request reaches the proxy
+fallback.
+
+The `routes` library contains the management API:
+
+- `GET /` returns a JSON service response.
+- `POST /backends/register` validates and stores a backend host plus its exact
+  served paths. Re-registering a host replaces its paths.
+
+### Backend storage and health
+
+`BackendRegistry` owns the SQLite schema and migrations. It persists backend
+hosts, their registered paths, `health_status` (`unknown`, `healthy`, or
+`unhealthy`), and `health_checked_at`.
+
+`BackendHealthMonitor` runs once when the process starts and then every five
+minutes. It sends `GET /health` to every registered backend; a `2xx` response
+marks the backend healthy, otherwise it is unhealthy. It keeps one
+`requests::BackendConnectionPool` (maximum one connection) per backend for
+these checks. A failed proxied request also immediately records `unhealthy` in
+SQLite. New registrations are `unknown` and remain eligible until their first
+health check completes.
+
+### Proxy and selection strategy
+
+`BackendProxy` matches the request path without its query string against the
+paths stored for each backend. It removes unhealthy candidates, gives the
+remaining list to a `LoadBalancingStrategy`, and returns `404` when no eligible
+backend exists.
+
+`RoundRobinStrategy` is the current strategy. Its atomic counter advances for
+each selection and chooses the next eligible backend. To add another policy,
+implement `LoadBalancingStrategy::select` and pass it to `BackendProxy` in
+`src/proxy.cpp`.
+
+The selected request is currently relayed over a fresh synchronous TCP
+connection using HTTP/1.1. The `requests` connection-pool library is reusable
+in this path, but is presently used only by health checks.
+
+### Build and deployment
+
+CMake builds four libraries: `slam`, `requests`, `core`, and `routes`, then
+links the `load_balancer` executable. Conan supplies Boost, spdlog,
+nlohmann_json, and SQLite. The Docker image builds a Release executable on
+Ubuntu and runs it as a non-root user with `/data` as a persistent volume for
+the SQLite database.
