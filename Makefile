@@ -5,7 +5,7 @@ CONTAINER ?= load-balancer
 PORT ?= 3000
 DATA_VOLUME ?= load-balancer-data
 
-.PHONY: help configure dev-build dev-run format docker-build docker-run
+.PHONY: help configure dev-build dev-run format docker-build docker-run docker-logs docker-stop
 
 help:
 	@echo Available targets:
@@ -14,7 +14,9 @@ help:
 	@echo "  dev-run      Build and run the server locally"
 	@echo "  format       Format all C++ source files"
 	@echo "  docker-build Build the Docker image"
-	@echo "  docker-run   Build and run the Docker image with persistent SQLite storage"
+	@echo "  docker-run   Build and run the Docker image in detached mode with persistent SQLite storage"
+	@echo "  docker-logs  Follow logs from the running Docker container"
+	@echo "  docker-stop  Stop the running Docker container"
 
 configure:
 	conan install . --output-folder=$(BUILD_DIR) --build=missing -s build_type=$(CONFIG)
@@ -33,4 +35,10 @@ docker-build:
 	docker build -t $(IMAGE) .
 
 docker-run: docker-build
-	docker run --rm --name $(CONTAINER) -p $(PORT):3000 -v $(DATA_VOLUME):/data $(IMAGE)
+	docker run -d --rm --name $(CONTAINER) -p $(PORT):3000 -v $(DATA_VOLUME):/data $(IMAGE)
+
+docker-logs:
+	docker logs -f $(CONTAINER)
+
+docker-stop:
+	docker stop $(CONTAINER)

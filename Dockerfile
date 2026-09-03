@@ -15,7 +15,9 @@ RUN pip3 install --no-cache-dir --break-system-packages conan
 
 WORKDIR /app
 
-COPY conanfile.py conan.lock ./
+# The host lockfile is platform-specific. Resolve a Linux graph in the image so
+# Linux-only transitive dependencies (for example Boost's libbacktrace) are included.
+COPY conanfile.py ./
 
 RUN conan profile detect --force \
     && conan install . --output-folder=build --build=missing -s build_type=Release
